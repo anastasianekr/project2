@@ -46,92 +46,265 @@ class_diag <- function(score, truth, positive, cutoff=.5){
 
 # Mining, Classification, Prediction
 
-## Name and EID here
+## Anastasia Nekrashevych, an26692
 
 ### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc. See instructions for more information
+We are what we eat. When it comes to nutrition, there are a multitude or sources that try to sway people on what is important. In the past, there has been a big emphasis on low calorie foods as an aspect of a healthy lifestyle. Although this has changed over time, calories are still an important measure of foods. In this study I will look at various compositional elements of 8723 foods. The dataset for this study was found on Kaggle and was created by Alexander Antonov. Because there are 77 variables in this dataset, I will concentrate only on amounts of total fat, cholesterol, sodium, vitamin D, magnesium, protein, calcium, iron, folate, and vitamin B12. I will also create a variable called low_cal. The FDA considers foods that are less than or equal to 120 calories per 100 grams as low calorie. All of the foods are measured at 100 grams in this dataset. In this study I hope to get a better understanding about the nutritional content of the foods I consume.
+
+In order to analyze the variables, I will get rid of the measurements inside of the dataset. As a reference, total fat is in g, cholesterol is in mg, sodium is in mg, vitamin D is in IU, magnesium in is mg, protein is in g, calcium is in mg, iron is in mg, folate is in mcg, and vitamin B12 is in mcg.
 
 ```{R}
 library(tidyverse)
-# read your datasets in here, e.g., with read_csv()
+library(readr)
 
-# if your dataset needs tidying, do so here
+food <- read_csv("nutrition.csv")
 
-# any other code here
+nutrition <- food %>%
+  select(name, calories, total_fat, cholesterol, sodium, vitamin_d, magnesium, protein, calcium, irom, folate, vitamin_b12)
+
+nutrition$total_fat <- gsub("g"," ",as.character(nutrition$total_fat))
+nutrition$cholesterol <- gsub("mg"," ",as.character(nutrition$cholesterol))
+nutrition$sodium <- gsub("mg"," ",as.character(nutrition$sodium))
+nutrition$vitamin_d <- gsub("IU"," ",as.character(nutrition$vitamin_d))
+nutrition$magnesium <- gsub("mg"," ",as.character(nutrition$magnesium))
+nutrition$protein <- gsub("g"," ",as.character(nutrition$protein))
+nutrition$calcium <- gsub("mg"," ",as.character(nutrition$calcium))
+nutrition$irom <- gsub("mg"," ",as.character(nutrition$irom))
+nutrition$folate <- gsub("mcg"," ",as.character(nutrition$folate))
+nutrition$vitamin_b12 <- gsub("mcg"," ",as.character(nutrition$vitamin_b12))
+
+nutrition <- nutrition %>%
+  rename(iron = irom) %>%
+  mutate(total_fat = as.double(total_fat)) %>%
+  mutate(cholesterol = as.double(cholesterol)) %>%
+  mutate(sodium = as.double(sodium)) %>%
+  mutate(vitamin_d = as.double(vitamin_d)) %>%
+  mutate(magnesium = as.double(magnesium)) %>%
+  mutate(protein = as.double(protein)) %>%
+  mutate(calcium = as.double(calcium)) %>%
+  mutate(iron = as.double(iron)) %>%
+  mutate(folate = as.double(folate)) %>%
+  mutate(vitamin_b12 = as.double(vitamin_b12))
+
+nutrition$low_cal <- ifelse(nutrition$calories<=120, 1, 0)
+
+nutrition <- nutrition %>%
+  select(-calories)
+
+nutrition <- nutrition %>%
+  na.omit()
 ```
+
 
 ### Cluster Analysis
 
 ```{R}
 library(cluster)
-# clustering code here
+library(ggplot2)
+library(GGally)
+clust_dat <- nutrition %>% dplyr::select(-name, -low_cal)
+clust_dat
+
+sil_width<-vector() #empty vector to hold mean sil width
+for(i in 2:10){  
+  kms <- kmeans(clust_dat,centers=i) #compute k-means solution
+  sil <- silhouette(kms$cluster,dist(clust_dat)) #get sil widths
+  sil_width[i]<-mean(sil[,3]) #take averages (higher is better)
+}
+ggplot()+
+  geom_line(aes(x=1:10,y=sil_width))+
+  scale_x_continuous(name="k",breaks=1:10)
+#2 clusters is best
+
+#running pam
+set.seed(322) #just makes our output match
+pam1 <- clust_dat %>% pam(k=2)
+pam1
+
+plot(silhouette(pam1, which=2), col=1:2, border=NA)
+
+#visualize numeric variables
+nutrition %>%
+  mutate(cluster=as.factor(pam1$clustering)) %>%
+  ggpairs(columns=2:11, aes(color=cluster))
 ```
 
-Discussion of clustering here
-    
-    
+I first ran a kmeans and through this saw that 2 clusters would work best. After doing the cluster analysis, I got a weak structure. When looking at the gg pairwise graph, I saw that sodium was highly separated. Additionally, iron and folate seemed separated between the two clusters. Vitamin D seemed to have one group have a few food items on the far end and the rest clustered together with the other group. I was surprised with these results! I expected there to be more clusters within the foods depending on these variables. For instance, I expected fruits, cheese, and meat to have distinct clusters. This did not seem to be the case, at least not distinctly and with strong goodness-of-fit.
+
 ### Dimensionality Reduction with PCA
 
 ```{R}
 # PCA code here
+nutrition_nums <- nutrition %>%
+  select(-name, -low_cal) %>%
+  select_if(is.numeric) %>%
+  scale
+
+nutrition_pca <-  princomp(nutrition_nums)
+names(nutrition_pca)
+
+eigval <- nutrition_pca$sdev^2 #square to convert SDs to eigenvalues
+varprop = round(eigval/sum(eigval), 2) #proportion of var explained by each PC
+varprop
+  
+round(cumsum(eigval)/sum(eigval), 2)
+eigval
+#keep 6 PCs
+
+summary(nutrition_pca, loadings=T) #get PCA summary
+
+library(factoextra)
+fviz_pca_biplot(nutrition_pca)
 ```
 
-Discussions of PCA here. 
+I decided to keep 6 clusters after running the PCA. When looking at the clusters I saw much clearer distinctions than I saw in the clustering section above. PC1 seemed to show healthy foods that are high in vitamins and minerals. These foods seem like generally healthy foods. PC2 seemed to show foods that are high in fat, cholesterol, protein, and vitamin B12. PC2 foods are most likely meats. PC3 showed foods high in everything other than iron, folate, and vitamin B12. PC4 foods were high in fat and magnesium. These are most likely fatty, non-meat foods such as pumpkin seeds, legumes, and nuts. PC5 foods were high in vitamin D and folate, but low in magnesium and protein. Lastly, PC6 showed foods high in fat, sodium, iron, folate, and vitamin B12. The biplot showed that foods high in cholesterol, protein, vitamin B12, and fat grouped closer together than those hgih in iron, calcium, sodium, and magensium.
 
 ###  Linear Classifier
 
 ```{R}
-# linear classifier code here
+#logistic classifier
+class_dat <- nutrition %>% select(low_cal, total_fat:vitamin_b12)
+glimpse(class_dat) 
+
+fit <- glm(low_cal ~ . , data=class_dat, family="binomial")
+probs <- predict(fit, type="response")
+class_diag(probs, class_dat$low_cal, positive=1) 
+
+#confusion matrix
+table(truth = class_dat$low_cal, predictions = probs>.5)
 ```
 
 ```{R}
 # cross-validation of linear classifier here
+set.seed(322)
+k=10
+
+data<-sample_frac(nutrition) #randomly order rows
+folds <- rep(1:k, length.out=nrow(data)) #create folds
+
+diags<-NULL
+
+i=1
+for(i in 1:k){
+# create training and test sets
+train<-data[folds!=i,] 
+test<-data[folds==i,] 
+truth<-test$low_cal
+
+# train model
+fit <- glm(low_cal ~ total_fat + cholesterol + sodium + vitamin_d + magnesium + protein + calcium + iron + folate + vitamin_b12, data=train, family="binomial")
+
+# test model
+probs <- predict(fit, newdata=test, type="response")
+
+# get performance metrics for each fold
+diags<-rbind(diags,class_diag(probs,truth, positive=1)) }
+
+#average performance metrics across all folds
+summarize_all(diags,mean)
 ```
 
-Discussion here
+I ran a logistic regression as a linear classifier. This gave me an AUC of 0.955, which is great. When I ran a confusion matrix on this I got 2459 true positives, 5412 true negatives, 488 false positives, and 363 false negatives. After running a 10-fold cross-validation the AUC barely went down to 0.95495. This model does not show signs of over-fitting. This model has good out-of-sample performance! 
 
 ### Non-Parametric Classifier
 
 ```{R}
 library(caret)
-# non-parametric classifier code here
+
+fit <- knn3(low_cal ~ . , data=class_dat)
+probs <- predict(fit, newdata=class_dat)[,2] #we choose the second column since that's the probability of "True"
+class_diag(probs, class_dat$low_cal, positive=1) 
+table(truth = class_dat$low_cal, predictions = probs>.5)
 ```
 
 ```{R}
 # cross-validation of np classifier here
+set.seed(322)
+k=10
+
+data<-sample_frac(nutrition) #randomly order rows
+folds <- rep(1:k, length.out=nrow(data)) #create folds
+
+diags<-NULL
+
+i=1
+for(i in 1:k){
+# create training and test sets
+train<-data[folds!=i,] 
+test<-data[folds==i,] 
+truth<-test$low_cal
+
+# train model
+fit <- knn3(low_cal ~ total_fat + cholesterol + sodium + vitamin_d + magnesium + protein + calcium + iron + folate + vitamin_b12, data=train)
+
+# test model
+probs <- predict(fit, newdata=test)[,2]
+
+# get performance metrics for each fold
+diags<-rbind(diags,class_diag(probs,truth, positive=1)) }
+
+#average performance metrics across all folds
+summarize_all(diags,mean)
 ```
 
-Discussion
+I ran a k-nearest-neighbors fit as a non-parametric classifier. This gave me an AUC of 0.9743, which is great. Additionally, I ran a confusion matrix. This showed 2451 true positives, 5501 true negatives, 399 false positives, and 371 false negatives. Afterwards, I ran a 10-fold cross-validation of the non-parametric classifier. This gave me an AUC of 0.93155. Although this did decrease the original AUC, it remained great and did not show signs of over-fitting. This, together with the linear classifier shows that the data follows both models well and fits well for out-of-sample predictions. This shows that low calorie foods have properties regarding their composition that can be easily determined through modeling. This is not particularly surprising.
 
 
 ### Regression/Numeric Prediction
 
 ```{R}
 # regression model code here
+fit <- lm(total_fat ~ cholesterol + sodium + vitamin_d + magnesium + protein + calcium + iron + folate + vitamin_b12, data=nutrition)
+
+yhat <- predict(fit)
+
+mean((nutrition$total_fat-yhat)^2)
+
 ```
 
 ```{R}
 # cross-validation of regression model here
+set.seed(1234)
+k=10 #choose number of folds
+data<-nutrition %>% sample_frac() #randomly order rows
+folds<-cut(seq(1:nrow(nutrition)),breaks=k,labels=F) #create folds
+diags<-NULL
+for(i in 1:k){
+  train<-data[folds!=i,]
+  test<-data[folds==i,]
+  ## Fit linear regression model to training set
+  fit<-knnreg(total_fat ~ cholesterol + sodium + vitamin_d + magnesium + protein + calcium + iron + folate + vitamin_b12,data=train)
+  ## Get predictions/y-hats on test set (fold i)
+  yhat<-predict(fit,newdata=test)
+  ## Compute prediction error  (MSE) for fold i
+  diags<-mean((test$total_fat-yhat)^2) 
+}
+mean(diags) ## get average MSE across all folds (much higher error)!
 ```
 
-Discussion
+The mean squared error (MSE) is 242.0051. This is very large and not very good at all. This most likely means that the variables in the dataset can not be accurately used to see whether a food item has a high fat content. This may mean that fatty foods can both be highly nutritious or not nutritious at all, which makes perfect sense. After running a k-fold cross validation, I got a mean squared error of 111.278. This is almost half of the previous mean squared error and may show signs of over-fitting. Most likely, predicting fat level based on the other variables in the dataset does not produce good results and should not be done. 
 
 ### Python 
 
 ```{R}
 library(reticulate)
+
+good = "All food is good"
+cat(c(good, py$moderate))
 ```
 
 ```{python}
 # python code here
-```
 
-Discussion
+moderate = "in moderation."
+print(r.good, moderate)
+```
+In this section I demonstrated how you can move between a python code chunk and an R code chunk. I made a variable in R with one phrase and a variable in python with another. I then joined them together in each section.
 
 ### Concluding Remarks
 
-Include concluding remarks here, if any
+This study showed some aspects of nutrition based on a variety of variables indicating a food's composition. Low calorie foods were shown to have qualities that separated them from other foods. High fat content foods did not seem to have qualities that separated them significantly between each other. An interesting future study would be to place food names into general groups such as "dairy products" and see how the groupings differed in nutritional content.
 
 
 
